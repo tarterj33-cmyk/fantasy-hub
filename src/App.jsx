@@ -436,6 +436,145 @@ function CloudSyncPanel(p){ const state=p.state,setState=p.setState; const cfg=(
   return (<div className="grid gap-2"><div className="grid md:grid-cols-2 gap-2"><Input placeholder="Supabase URL" value={form.url} onChange={function(e){setForm({...form,url:e.target.value});}}/><Input placeholder="Anon public key" value={form.key} onChange={function(e){setForm({...form,key:e.target.value});}}/><Input placeholder="Table (default leagues)" value={form.table} onChange={function(e){setForm({...form,table:e.target.value});}}/><Input placeholder="League ID (e.g., main)" value={form.id} onChange={function(e){setForm({...form,id:e.target.value});}}/></div><div className="flex flex-wrap gap-2 items-center"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.enabled} onChange={function(e){ var enabled=e.target.checked; setForm({...form,enabled:enabled}); setState(function(prev){ var s=deepClone(prev); s.ui=s.ui||{}; s.ui.cloud={ enabled: enabled, supabaseUrl: form.url, anonKey: form.key, table: form.table, leagueId: form.id, commishWrite: form.write, lastPulled: (s.ui.cloud&&s.ui.cloud.lastPulled)||0 }; return s; }); }}/>
 Enable sync</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.write} onChange={function(e){setForm({...form,write:e.target.checked});}}/>Commish can write</label><Button onClick={save}>Save</Button><Button onClick={pullNow}>Pull Now</Button><PrimaryButton onClick={pushNow}>Push Now</PrimaryButton><Button onClick={testConn}>Test</Button><div className="text-xs text-gray-500">{status}</div></div></div>); }
 
+// --- Runtime sanity checks (lightweight) ---
+function runDevTests(){
+  try{
+    const nt=parseNameTeamBye("Courtland Sutton DEN (9)");
+    console.assert(nt.name==="Courtland Sutton" && nt.team==="DEN" && nt.bye===9, "parseNameTeamBye failed");
+    console.assert(estimateProjection('RB',1) > estimateProjection('RB',50), "estimateProjection ordering failed");
+    const s=seedLeague();
+    // simple game result
+    const h=s.teams[0].id, a=s.teams[1].id;
+    s.schedule=[{week:1,games:[{home:h,away:a,homeScore:100,awayScore:90,final:true}]}];
+    const s2=recomputeTeamTotals(s);
+    const th=teamById(s2,h), ta=teamById(s2,a);
+    console.assert(th.wins===1 && ta.losses===1 && th.pointsFor===100 && ta.pointsAgainst===100, "recomputeTeamTotals failed");
+  }catch(e){ console.warn("FFL dev tests", e); }
+}
+if(typeof window!=="undefined" && !window.__FFL_DEV_TESTED__){ window.__FFL_DEV_TESTED__=true; try{ runDevTests(); }catch(e){} }
+
+// --- Helpers used by several admin panels ---
+function recomputeTeamTotals(state){
+  const s=deepClone(state);
+  // Reset
+  (s.teams||[]).forEach(function(t){ t.wins=0; t.losses=0; t.pointsFor=0; t.pointsAgainst=0; });
+  // Aggregate from scored games
+  for(const wk of (s.schedule||[])){
+    for(const g of (wk.games||[])){
+      const th=teamById(s,g.home), ta=teamById(s,g.away);
+      if(!th||!ta) continue;
+      const hs=Number(g.homeScore)||0; const as=Number(g.awayScore)||0;
+      th.pointsFor += hs; th.pointsAgainst += as;
+      ta.pointsFor += as; ta.pointsAgainst += hs;
+      if(g.final){ if(hs>as) th.wins++; else if(as>hs) ta.wins++; }
+    }
+  }
+  return s;
+}
+
+// --- Teams Admin (add/remove teams & managers) ---
+function TeamAdmin(p){
+  const state=p.state, setState=p.setState;
+  const [name,setName]=React.useState("");
+  const [manager,setManager]=React.useState("");
+  function add(){
+    if(!name.trim()) return;
+    setState(function(prev){
+      const s=deepClone(prev);
+      const id='t'+Date.now();
+      s.teams.push({ id:id, name:name.trim(), manager:manager.trim(), roster:newEmptyRoster(s.settings.rosterSlots), wins:0, losses:0, pointsFor:0, pointsAgainst:0 });
+      ensureFranchises(s);
+      return s;
+    });
+    setName(""); setManager("");
+  }
+  function removeTeam(id){
+    if(!id) return; if(!window.confirm('Remove this team? Games with this team will be deleted.')) return;
+    setState(function(prev){
+      let s=deepClone(prev);
+      // unlink franchise if linked
+      if(s.history&&Array.isArray(s.history.franchises)){
+        const f=s.history.franchises.find(function(fr){return fr.currentTeamId===id;});
+        if(f){ f.currentTeamId=null; f.active=false; }
+      }
+      // remove from schedule
+      s.schedule=(s.schedule||[]).map(function(w){ return {week:w.week, games:(w.games||[]).filter(function(g){return g.home!==id && g.away!==id;})}; });
+      // drop team
+      s.teams=s.teams.filter(function(t){return t.id!==id;});
+      s=recomputeTeamTotals(s);
+      return s;
+    });
+  }
+  const rows=state.teams||[];
+  return (
+    <div className="grid gap-2">
+      <div className="grid md:grid-cols-3 gap-2 items-end">
+        <Input placeholder="Team name" value={name} onChange={function(e){setName(e.target.value);}}/>
+        <Input placeholder="Manager" value={manager} onChange={function(e){setManager(e.target.value);}}/>
+        <PrimaryButton onClick={add}>Add Team</PrimaryButton>
+      </div>
+      <div className="rounded-2xl border overflow-auto">
+        <table className="min-w-full text-sm">
+          <thead className="text-left text-xs text-gray-500"><tr><th className="p-2">Team</th><th className="p-2">Manager</th><th className="p-2">Record</th><th className="p-2"></th></tr></thead>
+          <tbody>
+            {rows.map(function(t){
+              return (
+                <tr key={t.id} className="border-b last:border-0">
+                  <td className="p-2">{t.name}</td>
+                  <td className="p-2">{t.manager}</td>
+                  <td className="p-2">{(t.wins||0)}-{(t.losses||0)}</td>
+                  <td className="p-2 text-right"><Button className="text-xs" onClick={function(){removeTeam(t.id);}}>Remove</Button></td>
+                </tr>
+              );
+            })}
+            {rows.length===0?(<tr><td className="p-2 text-sm text-gray-500" colSpan={4}>No teams yet.</td></tr>):null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// --- Team Editor (rename team & manager, does not touch history entries) ---
+function TeamEditor(p){
+  const state=p.state, setState=p.setState;
+  function renameTeam(id){
+    const t=teamById(state,id); if(!t) return;
+    const v=prompt('New team name', t.name);
+    if(v && v.trim()){
+      setState(function(prev){ const s=deepClone(prev); const tt=teamById(s,id); if(tt) tt.name=v.trim(); return s; });
+    }
+  }
+  function renameMgr(id){
+    const t=teamById(state,id); if(!t) return;
+    const v=prompt('New manager name', t.manager||'');
+    if(v!=null){ setState(function(prev){ const s=deepClone(prev); const tt=teamById(s,id); if(tt) tt.manager=v.trim(); return s; }); }
+  }
+  const rows=state.teams||[];
+  return (
+    <div className="rounded-2xl border overflow-auto">
+      <table className="min-w-full text-sm">
+        <thead className="text-left text-xs text-gray-500"><tr><th className="p-2">Team</th><th className="p-2">Manager</th><th className="p-2"></th></tr></thead>
+        <tbody>
+          {rows.map(function(t){ return (
+            <tr key={t.id} className="border-b last:border-0">
+              <td className="p-2">{t.name}</td>
+              <td className="p-2">{t.manager||''}</td>
+              <td className="p-2 text-right">
+                <div className="flex gap-2 justify-end">
+                  <Button className="text-xs" onClick={function(){renameTeam(t.id);}}>Rename Team</Button>
+                  <Button className="text-xs" onClick={function(){renameMgr(t.id);}}>Rename Manager</Button>
+                </div>
+              </td>
+            </tr>
+          ); })}
+          {rows.length===0?(<tr><td className="p-2 text-sm text-gray-500" colSpan={3}>No teams.</td></tr>):null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CommissionerTab(p){ const state=p.state,setState=p.setState; const hash=(state.settings&&state.settings.commissioner&&state.settings.commissioner.passwordHash)||null; const unlocked=!!(state.ui&&state.ui.commishUnlocked); const [pw,setPw]=useState(""); const [pw2,setPw2]=useState(""); const [oldPw,setOldPw]=useState(""); function doUnlock(){ if(!hash){ if(!pw||pw!==pw2) return; setState(function(prev){ const s=deepClone(prev); if(!s.settings.commissioner) s.settings.commissioner={}; s.settings.commissioner.passwordHash=hashLite(pw); s.ui.commishUnlocked=true; return s; }); setPw(""); setPw2(""); } else { if(!pw) return; if(hashLite(pw)!==hash){ alert("Incorrect password"); return; } setState(function(prev){ const s=deepClone(prev); s.ui.commishUnlocked=true; return s; }); setPw(""); } } function doLock(){ setState(function(prev){ const s=deepClone(prev); s.ui.commishUnlocked=false; return s; }); } function doReset(){ if(!unlocked) return; if(hash && hashLite(oldPw)!==hash){ alert("Incorrect current password"); return; } if(!pw||pw!==pw2){ alert("Passwords must match"); return; } setState(function(prev){ const s=deepClone(prev); if(!s.settings.commissioner) s.settings.commissioner={}; s.settings.commissioner.passwordHash=hashLite(pw); s.ui.commishUnlocked=true; return s; }); setOldPw(""); setPw(""); setPw2(""); }
   return (<div className="grid gap-4">
     <Card>
