@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Fantasy League Hub</title>
+    <style>
+      html,body,#root { height: 100%; margin: 0; }
+      body { background: #f8fafc; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React + ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel to compile the .jsx in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Your app code (we'll make one tiny edit in the next step) -->
+    <script type="text/babel" data-presets="react" src="./fantasy_league_hub_react_app.jsx"></script>
+
+    <!-- Mount the component -->
+    <script type="text/babel">
+      ReactDOM.createRoot(document.getElementById('root')).render(<FantasyLeagueHub />);
+    </script>
+  </body>
+</html>
