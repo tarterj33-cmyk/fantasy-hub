@@ -284,8 +284,158 @@ function FreeAgents(p){ const state=p.state,setState=p.setState||function(){}; c
 
 function recomputeTeamTotals(s){ const state=deepClone(s); for(const t of state.teams){ t.wins=0; t.losses=0; t.pointsFor=0; t.pointsAgainst=0; } for(const wk of state.schedule||[]){ for(const g of (wk.games||[])){ if(!g.final) continue; const ht=teamById(state,g.home), at=teamById(state,g.away); const hs=Number(g.homeScore)||0, as=Number(g.awayScore)||0; if(ht){ ht.pointsFor+=hs; ht.pointsAgainst+=as; } if(at){ at.pointsFor+=as; at.pointsAgainst+=hs; } if(hs>as){ if(ht) ht.wins++; if(at) at.losses++; } else if(as>hs){ if(at) at.wins++; if(ht) ht.losses++; } } } return state; }
 function TeamAdmin(p){ const state=p.state,setState=p.setState; const [teamName,setTeamName]=useState(""); const [manager,setManager]=useState(""); function add(){ if(!teamName||!manager) return; setState(function(prev){ const s=deepClone(prev); const id='t'+Date.now(); s.teams.push({ id:id, name:teamName.trim(), manager:manager.trim(), roster:newEmptyRoster(s.settings.rosterSlots), wins:0, losses:0, pointsFor:0, pointsAgainst:0 }); ensureFranchises(s); return s; }); setTeamName(""); setManager(""); } return (<div className="grid md:grid-cols-3 gap-2 items-end"><Input placeholder="Team name" value={teamName} onChange={function(e){setTeamName(e.target.value);}}/><Input placeholder="Manager" value={manager} onChange={function(e){setManager(e.target.value);}}/><PrimaryButton onClick={add}>Add Manager</PrimaryButton></div>); }
-function RosterAdmin(p){ const state=p.state,setState=p.setState; const [teamId,setTeamId]=useState(state.teams[0]?state.teams[0].id:""); const [q,setQ]=useState(""); const [pos,setPos]=useState(""); const team=teamById(state,teamId); const pool=freeAgentList(state).filter(function(pl){ return (!q||pl.name.toLowerCase().includes(q.toLowerCase())) && (!pos||pl.pos===pos); }).slice(0,200); function addTo(slot,pl){ if(!team) return; if(!canPlaceInSlot(team,slot,pl)) return; setState(function(prev){ const s=deepClone(prev); const t=teamById(s,teamId); if(!t) return prev; t.roster[slot].push(pl); return s; }); } const posList=["QB","RB","WR","TE","DST","K"];
-  return (<div className="grid md:grid-cols-2 gap-4 items-start"><div className="rounded-2xl border p-3"><div className="grid gap-2 md:grid-cols-2"><div><div className="text-xs text-gray-500 mb-1">Team</div><Select value={teamId} onChange={function(e){setTeamId(e.target.value);}}>{state.teams.map(function(t){return (<option key={t.id} value={t.id}>{t.name}</option>);})}</Select></div><div><div className="text-xs text-gray-500 mb-1">Search free agents</div><Input placeholder="Name" value={q} onChange={function(e){setQ(e.target.value);}}/></div><div><div className="text-xs text-gray-500 mb-1">Position</div><Select value={pos} onChange={function(e){setPos(e.target.value);}}><option value="">All</option>{posList.map(function(pp){return (<option key={pp} value={pp}>{pp}</option>);})}</Select></div></div><div className="mt-3 rounded-xl border overflow-auto" style={{maxHeight:360}}><table className="min-w-full text-sm"><thead className="text-left text-xs text-gray-500"><tr><th className="p-2">Player</th><th className="p-2">Pos</th><th className="p-2">NFL</th><th className="p-2">Proj</th><th className="p-2">Add</th></tr></thead><tbody>{pool.map(function(pl){ const dests=ROSTER_SLOTS.filter(function(s){return s!=="BENCH" && canPlaceInSlot(team,s,pl);}); return (<tr key={pl.id} className="border-b last:border-0"><td className="p-2 font-medium">{pl.name}</td><td className="p-2">{pl.pos}</td><td className="p-2">{pl.nfl}</td><td className="p-2">{formatNum(pl.projected)}</td><td className="p-2"><div className="flex flex-wrap gap-1">{dests.map(function(s){ return (<Button key={s} className="text-xs" onClick={function(){addTo(s,pl);}}>{s}</Button>); })}<Button className="text-xs" onClick={function(){addTo('BENCH',pl);}}>BENCH</Button></div></td></tr>); })}{pool.length===0?(<tr><td className="p-2 text-sm text-gray-500" colSpan={5}>No matches.</td></tr>):null}</tbody></table></div></div><div><div className="text-sm font-medium mb-2">{team?team.name:"Select a team"} Roster</div>{team?(<RosterTable team={team} setState={setState} readOnly={false}/>):(<div className="text-sm text-gray-500">Pick a team.</div>)}</div></div>); }
+function TeamEditor(p){
+  const state=p.state, setState=p.setState;
+  const [editing,setEditing]=useState(null); // teamId being edited
+  const [name,setName]=useState("");
+  const [manager,setManager]=useState("");
+  function startEdit(teamId){
+    const t=teamById(state,teamId);
+    setEditing(teamId);
+    setName(t?t.name:"");
+    setManager(t?t.manager:"");
+  }
+  function cancel(){ setEditing(null); setName(""); setManager(""); }
+  function save(){
+    if(!editing) return;
+    setState(function(prev){
+      const s=deepClone(prev);
+      const tt=teamById(s,editing);
+      if(tt){
+        tt.name = (name||"").trim() || tt.name;
+        tt.manager = (manager||"").trim() || tt.manager;
+      }
+      return s;
+    });
+    cancel();
+  }
+  return (
+    <div className="rounded-2xl border overflow-auto">
+      <table className="min-w-full text-sm">
+        <thead className="text-left text-xs text-gray-500">
+          <tr>
+            <th className="p-2">Team</th>
+            <th className="p-2">Manager</th>
+            <th className="p-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {state.teams.map(function(t){
+            const isEdit = editing===t.id;
+            return (
+              <tr key={t.id} className="border-b last:border-0">
+                <td className="p-2">
+                  {isEdit ? (
+                    <Input value={name} onChange={function(e){setName(e.target.value);}}/>
+                  ) : (
+                    t.name
+                  )}
+                </td>
+                <td className="p-2">
+                  {isEdit ? (
+                    <Input value={manager} onChange={function(e){setManager(e.target.value);}}/>
+                  ) : (
+                    t.manager
+                  )}
+                </td>
+                <td className="p-2 text-right">
+                  <div className="flex gap-2 justify-end">
+                    {!isEdit ? (
+                      <Button className="text-xs" onClick={function(){startEdit(t.id);}}>Edit</Button>
+                    ) : (
+                      <>
+                        <PrimaryButton className="text-xs" onClick={save}>Save</PrimaryButton>
+                        <Button className="text-xs" onClick={cancel}>Cancel</Button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function RosterAdmin(p){
+  const state=p.state, setState=p.setState;
+  const [teamId,setTeamId]=useState(state.teams[0]?state.teams[0].id:"");
+  const [q,setQ]=useState("");
+  const [pos,setPos]=useState("");
+  const team=teamById(state,teamId);
+  const pool=freeAgentList(state).filter(function(pl){
+    return (!q||pl.name.toLowerCase().includes(q.toLowerCase())) && (!pos||pl.pos===pos);
+  }).slice(0,200);
+  function addTo(slot,pl){
+    if(!team) return;
+    if(!canPlaceInSlot(team,slot,pl)) return;
+    setState(function(prev){
+      const s=deepClone(prev);
+      const t=teamById(s,teamId);
+      if(!t) return prev;
+      t.roster[slot].push(pl);
+      return s;
+    });
+  }
+  const posList=["QB","RB","WR","TE","DST","K"];
+  return (
+    <div className="grid md:grid-cols-2 gap-4 items-start">
+      <div className="rounded-2xl border p-3">
+        <div className="grid gap-2 md:grid-cols-2">
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Team</div>
+            <Select value={teamId} onChange={function(e){setTeamId(e.target.value);}}>
+              {state.teams.map(function(t){return (<option key={t.id} value={t.id}>{t.name}</option>);})}
+            </Select>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Search free agents</div>
+            <Input placeholder="Name" value={q} onChange={function(e){setQ(e.target.value);}}/>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 mb-1">Position</div>
+            <Select value={pos} onChange={function(e){setPos(e.target.value);}}>
+              <option value="">All</option>
+              {posList.map(function(pp){return (<option key={pp} value={pp}>{pp}</option>);})}
+            </Select>
+          </div>
+        </div>
+        <div className="mt-3 rounded-xl border overflow-auto" style={{maxHeight:360}}>
+          <table className="min-w-full text-sm">
+            <thead className="text-left text-xs text-gray-500">
+              <tr><th className="p-2">Player</th><th className="p-2">Pos</th><th className="p-2">NFL</th><th className="p-2">Proj</th><th className="p-2">Add</th></tr>
+            </thead>
+            <tbody>
+              {pool.map(function(pl){
+                const dests=ROSTER_SLOTS.filter(function(s){return s!=="BENCH" && canPlaceInSlot(team,s,pl);});
+                return (
+                  <tr key={pl.id} className="border-b last:border-0">
+                    <td className="p-2 font-medium">{pl.name}</td>
+                    <td className="p-2">{pl.pos}</td>
+                    <td className="p-2">{pl.nfl}</td>
+                    <td className="p-2">{formatNum(pl.projected)}</td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1">
+                        {dests.map(function(s){ return (<Button key={s} className="text-xs" onClick={function(){addTo(s,pl);}}>{s}</Button>); })}
+                        <Button className="text-xs" onClick={function(){addTo('BENCH',pl);}}>BENCH</Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {pool.length===0?(<tr><td className="p-2 text-sm text-gray-500" colSpan={5}>No matches.</td></tr>):null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div className="text-sm font-medium mb-2">{team?team.name:"Select a team"} Roster</div>
+        {team?(<RosterTable team={team} setState={setState} readOnly={false}/>):(<div className="text-sm text-gray-500">Pick a team.</div>)}
+      </div>
+    </div>
+  );
+}
 function CSVImportAdmin(p){ const state=p.state,setState=p.setState; const [fileName,setFileName]=useState(""); const inputRef=useRef(null); const [mode,setMode]=useState("append"); function pick(){ if(inputRef.current) inputRef.current.click(); } function onFile(e){ const f=e.target.files&&e.target.files[0]; if(!f) return; setFileName(f.name); const r=new FileReader(); r.onload=function(){ const txt=String(r.result||""); const parsed=parseFantasyProsCSV(txt); setState(function(prev){ const s=deepClone(prev); if(mode==="replace"){ s.players=parsed; } else { const byId={}; s.players.forEach(function(p){byId[p.id]=1;}); parsed.forEach(function(p){ if(!byId[p.id]) s.players.push(p); }); } return s; }); }; r.readAsText(f); e.target.value=""; } return (<div className="flex flex-wrap gap-3 items-center"><input ref={inputRef} type="file" accept=".csv" onChange={onFile} className="hidden"/><Button onClick={pick}>Choose CSV</Button><div className="text-xs text-gray-500">{fileName||"No file chosen"}</div><Select value={mode} onChange={function(e){setMode(e.target.value);}}><option value="append">Append</option><option value="replace">Replace</option></Select></div>); }
 function getOrCreateWeek(s,week){ let w=s.schedule.find(function(x){return x.week===week;}); if(!w){ w={week:week,games:[]}; s.schedule.push(w); } return w; }
 function ScheduleAdmin(p){ const state=p.state,setState=p.setState; const [week,setWeek]=useState(1); const [home,setHome]=useState(state.teams[0]?state.teams[0].id:""); const [away,setAway]=useState(state.teams[1]?state.teams[1].id:""); function add(){ if(!home||!away||home===away) return; setState(function(prev){ let s=deepClone(prev); const w=getOrCreateWeek(s,Number(week)); w.games.push({home:home,away:away,homeScore:0,awayScore:0,final:false}); return s; }); } function removeGame(idx){ setState(function(prev){ let s=deepClone(prev); const w=getOrCreateWeek(s,Number(week)); w.games.splice(idx,1); s=recomputeTeamTotals(s); return s; }); } function update(idx,field,val){ setState(function(prev){ let s=deepClone(prev); const w=getOrCreateWeek(s,Number(week)); const g=w.games[idx]; if(!g) return prev; if(field==='final'){ g.final=!!val; } else if(field==='homeScore'){ g.homeScore=Number(val)||0; } else if(field==='awayScore'){ g.awayScore=Number(val)||0; } s=recomputeTeamTotals(s); return s; }); } const curr=state.schedule.find(function(x){return x.week===Number(week);}); const games=(curr&&curr.games)||[]; const weeks=Array.from({length:state.settings.weeks},function(_,i){return i+1;}); return (<div className="grid gap-3"><div className="grid md:grid-cols-7 gap-2 items-end"><div><div className="text-xs text-gray-500 mb-1">Week</div><Select value={week} onChange={function(e){setWeek(parseInt(e.target.value,10));}}>{weeks.map(function(w){return (<option key={w} value={w}>{w}</option>);})}</Select></div><div className="md:col-span-2"><div className="text-xs text-gray-500 mb-1">Home</div><Select value={home} onChange={function(e){setHome(e.target.value);}}>{state.teams.map(function(t){return (<option key={t.id} value={t.id}>{t.name}</option>);})}</Select></div><div className="md:col-span-2"><div className="text-xs text-gray-500 mb-1">Away</div><Select value={away} onChange={function(e){setAway(e.target.value);}}>{state.teams.map(function(t){return (<option key={t.id} value={t.id}>{t.name}</option>);})}</Select></div><div className="md:col-span-2"><PrimaryButton onClick={add}>Add Game</PrimaryButton></div></div><div className="rounded-2xl border overflow-auto"><table className="min-w-full text-sm"><thead className="text-left text-xs text-gray-500"><tr><th className="p-2">Home</th><th className="p-2">Away</th><th className="p-2">Home Score</th><th className="p-2">Away Score</th><th className="p-2">Final</th><th className="p-2"></th></tr></thead><tbody>{games.map(function(g,i){ return (<tr key={i} className="border-b last:border-0"><td className="p-2">{teamById(state,g.home)?teamById(state,g.home).name:""}</td><td className="p-2">{teamById(state,g.away)?teamById(state,g.away).name:""}</td><td className="p-2 w-24"><Input type="number" value={g.homeScore||0} onChange={function(e){update(i,'homeScore',e.target.value);}}/></td><td className="p-2 w-24"><Input type="number" value={g.awayScore||0} onChange={function(e){update(i,'awayScore',e.target.value);}}/></td><td className="p-2 text-center"><input type="checkbox" checked={!!g.final} onChange={function(e){update(i,'final',e.target.checked);}}/></td><td className="p-2 text-right"><Button className="text-xs" onClick={function(){removeGame(i);}}>Remove</Button></td></tr>); })}{games.length===0?(<tr><td className="p-2 text-sm text-gray-500" colSpan={6}>No games yet for this week.</td></tr>):null}</tbody></table></div></div>); }
@@ -333,6 +483,7 @@ function CommissionerTab(p){ const state=p.state,setState=p.setState; const hash
     {unlocked ? (<>
       <Card><CardHeader title="Cloud Sync" sub="Sync via Supabase; enable and save"/><CardBody><CloudSyncPanel state={state} setState={setState}/></CardBody></Card>
       <Card><CardHeader title="Teams / Managers" sub="Add teams and managers"/><CardBody><TeamAdmin state={state} setState={setState}/></CardBody></Card>
+      <Card><CardHeader title="Edit Team / Manager Names" sub="Rename without affecting history records"/><CardBody><TeamEditor state={state} setState={setState}/></CardBody></Card>
       <Card><CardHeader title="Roster Editor" sub="Search free agents and add to rosters"/><CardBody><RosterAdmin state={state} setState={setState}/></CardBody></Card>
       <Card><CardHeader title="Free Agent CSV Import" sub="FantasyPros top 300 supported. Use Replace to overwrite the current pool."/><CardBody><CSVImportAdmin state={state} setState={setState}/></CardBody></Card>
       <Card><CardHeader title="Schedule & Results" sub="Create games, enter scores, remove games"/><CardBody><ScheduleAdmin state={state} setState={setState}/></CardBody></Card>
