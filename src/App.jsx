@@ -110,6 +110,33 @@ export default function FantasyLeagueHub(){
   const [state,setState]=useState(loadLeague());
   const [tab,setTab]=useState("dashboard");
   useEffect(function(){ saveLeague(state); },[state]);
+  const didInitCloud = useRef(false);
+  const pushTimerRef = useRef(null);
+  useEffect(function(){
+    if(didInitCloud.current) return;
+    const cfg = state.ui && state.ui.cloud;
+    if(!(cfg && cfg.enabled && cfg.supabaseUrl && cfg.anonKey && cfg.table && cfg.leagueId)) { didInitCloud.current = true; return; }
+    const url = cfg.supabaseUrl.replace(/\/$/, "")+"/rest/v1/"+cfg.table+"?id=eq."+encodeURIComponent(cfg.leagueId)+"&select=state,updated_at";
+    fetch(url,{headers:{apikey:cfg.anonKey, Authorization:"Bearer "+cfg.anonKey, "Content-Type":"application/json"}})
+      .then(function(r){ return r.ok? r.json() : Promise.reject(r.statusText); })
+      .then(function(rows){ if(rows && rows[0] && rows[0].state){ setState(function(prev){ const remote=rows[0].state; const s=deepClone(remote); s.ui=prev.ui||{}; s.ui.cloud={...cfg, lastPulled:Date.now()}; return s; }); } })
+      .catch(function(){})
+      .finally(function(){ didInitCloud.current=true; });
+  },[]);
+  useEffect(function(){
+    const cfg = state.ui && state.ui.cloud;
+    if(!(cfg && cfg.enabled && cfg.commishWrite && (state.ui && state.ui.commishUnlocked))) return;
+    if(pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(function(){
+      const clean = {...state, ui:{...state.ui, commishUnlocked:false}};
+      fetch(cfg.supabaseUrl.replace(/\/$/, "")+"/rest/v1/"+cfg.table,{
+        method:"POST",
+        headers:{apikey:cfg.anonKey, Authorization:"Bearer "+cfg.anonKey, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal"},
+        body: JSON.stringify([{id:cfg.leagueId, state:clean, updated_at:new Date().toISOString()}])
+      }).catch(function(){});
+    },800);
+    return function(){ if(pushTimerRef.current) clearTimeout(pushTimerRef.current); };
+  },[state]);
   return (
     <div className="min-h-screen relative bg-gradient-to-b from-emerald-50 via-sky-50 to-indigo-50">
       <header className="sticky top-0 z-20 relative overflow-hidden backdrop-blur bg-gradient-to-r from-emerald-700 via-teal-600 to-indigo-600 text-white border-b border-emerald-700/30">
@@ -625,3 +652,4 @@ function CommissionerTab(p){ const state=p.state,setState=p.setState; const hash
     </>) : (<Card><CardBody><div className="text-sm text-gray-600">Unlock to reveal commissioner tools.</div></CardBody></Card>)}
   </div>);
 }
+
