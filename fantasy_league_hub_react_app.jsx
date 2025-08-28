@@ -106,7 +106,7 @@ const TABS=[
   {id:"commish",label:"Commissioner"}
 ];
 
-export default function FantasyLeagueHub(){
+function FantasyLeagueHub(){
   const [state,setState]=useState(loadLeague());
   const [tab,setTab]=useState("dashboard");
   useEffect(function(){ saveLeague(state); },[state]);
