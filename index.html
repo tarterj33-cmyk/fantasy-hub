@@ -1,30 +1,19 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fantasy League Hub</title>
-    <style>
-      html,body,#root { height: 100%; margin: 0; }
-      body { background: #f8fafc; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
-    </style>
+    <meta name="theme-color" content="#065f46" />
+    <link rel="icon" href="data:," />
+    <!-- Tailwind via CDN (keeps things simple) -->
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body>
+  <body class="min-h-screen bg-white">
+    <noscript>You need JavaScript enabled to run this app.</noscript>
     <div id="root"></div>
 
-    <!-- React + ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-    <!-- Babel to compile the .jsx in the browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Your app code (we'll make one tiny edit in the next step) -->
-    <script type="text/babel" data-presets="react" src="./fantasy_league_hub_react_app.jsx"></script>
-
-    <!-- Mount the component -->
-    <script type="text/babel">
-      ReactDOM.createRoot(document.getElementById('root')).render(<FantasyLeagueHub />);
-    </script>
+    <!-- Vite entry: make sure /src/main.jsx exists -->
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
